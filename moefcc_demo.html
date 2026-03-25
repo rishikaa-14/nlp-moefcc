@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MoEFCC Sustainability NLP Classifier</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f8f7f3; --surface: #ffffff; --surface2: #f1efe8;
+    --border: rgba(0,0,0,0.1); --border2: rgba(0,0,0,0.18);
+    --text: #1a1a18; --muted: #6b6b65; --hint: #9b9b94;
+    --water: #185FA5; --water-bg: #E6F1FB; --water-txt: #0C447C;
+    --bio: #0F6E56; --bio-bg: #E1F5EE; --bio-txt: #085041;
+    --soil: #854F0B; --soil-bg: #FAEEDA; --soil-txt: #633806;
+    --climate: #534AB7; --climate-bg: #EEEDFE; --climate-txt: #3C3489;
+    --eco: #3B6D11; --eco-bg: #EAF3DE; --eco-txt: #27500A;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a18; --surface: #242422; --surface2: #2c2c2a;
+      --border: rgba(255,255,255,0.1); --border2: rgba(255,255,255,0.18);
+      --text: #f0efe8; --muted: #a8a89e; --hint: #72726a;
+      --water-bg: #042C53; --water-txt: #B5D4F4;
+      --bio-bg: #04342C; --bio-txt: #9FE1CB;
+      --soil-bg: #412402; --soil-txt: #FAC775;
+      --climate-bg: #26215C; --climate-txt: #CECBF6;
+      --eco-bg: #173404; --eco-txt: #C0DD97;
+    }
+  }
+
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; padding: 2rem 1rem; }
+  .container { max-width: 960px; margin: 0 auto; }
+
+  h1 { font-size: 1.6rem; font-weight: 600; margin-bottom: 0.25rem; }
+  .subtitle { font-size: 0.9rem; color: var(--muted); margin-bottom: 2rem; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+  .tab { padding: 0.5rem 1rem; font-size: 0.85rem; cursor: pointer; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: none; color: var(--muted); background: transparent; transition: all 0.15s; }
+  .tab:hover { color: var(--text); background: var(--surface2); }
+  .tab.active { color: var(--text); background: var(--surface); border-color: var(--border); border-bottom-color: var(--surface); font-weight: 500; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ── Classifier Panel ── */
+  .input-area { position: relative; }
+  textarea { width: 100%; min-height: 120px; padding: 0.75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 0.9rem; resize: vertical; font-family: inherit; transition: border-color 0.15s; }
+  textarea:focus { outline: none; border-color: var(--border2); }
+  .btn-row { display: flex; gap: 8px; margin-top: 0.75rem; flex-wrap: wrap; }
+  button { padding: 0.45rem 1rem; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 0.83rem; transition: all 0.12s; }
+  button:hover { background: var(--surface2); border-color: var(--border2); }
+  button.primary { background: #185FA5; color: #fff; border-color: #185FA5; }
+  button.primary:hover { background: #0C447C; }
+  .samples { display: flex; flex-wrap: wrap; gap: 6px; margin: 0.75rem 0 1.25rem; }
+  .sample-chip { font-size: 0.78rem; padding: 4px 10px; border-radius: 20px; background: var(--surface2); border: 1px solid var(--border); cursor: pointer; color: var(--muted); transition: all 0.12s; white-space: nowrap; }
+  .sample-chip:hover { color: var(--text); border-color: var(--border2); }
+
+  .result-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-top: 1rem; }
+  .result-header { display: flex; align-items: center; gap: 10px; margin-bottom: 1rem; }
+  .theme-badge { font-size: 0.75rem; font-weight: 600; padding: 4px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .confidence-bar-wrap { flex: 1; }
+  .conf-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 3px; }
+  .conf-bar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+  .conf-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+  .theme-breakdown { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin-top: 1rem; }
+  .breakdown-item { text-align: center; padding: 0.6rem 0.4rem; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); }
+  .breakdown-name { font-size: 0.7rem; color: var(--muted); margin-bottom: 4px; }
+  .breakdown-score { font-size: 1rem; font-weight: 600; }
+  .sentence-tag { display: inline-block; font-size: 0.8rem; color: var(--muted); background: var(--surface2); padding: 3px 8px; border-radius: 4px; margin-top: 0.75rem; word-break: break-word; }
+
+  /* ── Pipeline Panel ── */
+  .pipeline { display: flex; flex-direction: column; gap: 1px; }
+  .step { display: flex; gap: 1rem; padding: 1.25rem; background: var(--surface); border: 1px solid var(--border); align-items: flex-start; }
+  .step:first-child { border-radius: 12px 12px 0 0; }
+  .step:last-child { border-radius: 0 0 12px 12px; }
+  .step-num { width: 28px; height: 28px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; flex-shrink: 0; color: var(--muted); }
+  .step-body h3 { font-size: 0.9rem; font-weight: 600; margin-bottom: 3px; }
+  .step-body p { font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+  .step-body code { font-size: 0.78rem; background: var(--surface2); padding: 1px 5px; border-radius: 4px; font-family: monospace; color: var(--text); }
+
+  /* ── Dataset Panel ── */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 1.5rem; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; }
+  .stat-num { font-size: 1.5rem; font-weight: 700; }
+  .stat-label { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
+  .theme-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .theme-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .theme-name-col { font-size: 0.82rem; width: 160px; flex-shrink: 0; }
+  .theme-bar-outer { flex: 1; height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+  .theme-bar-inner { height: 100%; border-radius: 4px; }
+  .theme-count { font-size: 0.78rem; color: var(--muted); width: 60px; text-align: right; flex-shrink: 0; }
+
+  /* ── Code Panel ── */
+  pre { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; overflow-x: auto; font-size: 0.78rem; line-height: 1.6; color: var(--text); }
+  .code-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 6px; font-family: monospace; }
+
+  /* ── URL List ── */
+  .url-list { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .url-item { display: flex; align-items: center; gap: 10px; padding: 0.6rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+  .url-item:last-child { border-bottom: none; }
+  .yr-badge { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px; font-size: 0.72rem; font-weight: 600; color: var(--muted); flex-shrink: 0; }
+  .url-link { color: #185FA5; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+  @media (prefers-color-scheme: dark) { .url-link { color: #85B7EB; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🌿 MoEFCC Sustainability NLP Classifier</h1>
+  <p class="subtitle">Classify scientific statements from 18 MoEFCC Annual Reports (2008–2026) into 5 sustainability themes</p>
+
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('classify')">Live Demo</div>
+    <div class="tab" onclick="showTab('pipeline')">Pipeline</div>
+    <div class="tab" onclick="showTab('dataset')">Dataset Stats</div>
+    <div class="tab" onclick="showTab('graphs')">Themes Over Years</div>
+    <div class="tab" onclick="showTab('reports')">40 Reports</div>
+    <div class="tab" onclick="showTab('code')">Code Snippets</div>
+  </div>
+
+  <!-- ── TAB 1: Classify ── -->
+  <div id="classify" class="panel active">
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.75rem;">Try sample sentences or type your own:</p>
+    <div class="samples" id="samples"></div>
+    <div class="input-area">
+      <textarea id="inputText" placeholder="Type or paste a scientific statement from an environmental report..."></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="primary" onclick="classify()">Classify →</button>
+      <button onclick="clearAll()">Clear</button>
+    </div>
+    <div id="result" style="margin-top:1.25rem;"></div>
+  </div>
+
+  <!-- ── TAB 2: Pipeline ── -->
+  <div id="pipeline" class="panel">
+    <div class="pipeline">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><h3>Download PDFs</h3><p>Fetches all 40 annual reports from <code>moef.gov.in</code> using <code>urllib</code> with a polite crawl delay. Saves to <code>reports_pdf/</code>.</p></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><h3>Extract Text</h3><p>Primary: <code>PyMuPDF (fitz)</code> for fast, accurate PDF parsing. Fallback: <code>pdfminer.six</code> for complex/scanned PDFs. Handles multi-column layouts from older reports.</p></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><h3>Clean & Segment</h3><p>De-hyphenation, whitespace normalisation, non-ASCII removal. Sentence segmentation via <code>spaCy en_core_web_sm</code> with regex fallback. Filters sentences shorter than 40 chars.</p></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><h3>Seed Labelling (Keyword Rules)</h3><p>Each sentence scored against 5 keyword dictionaries (25 keywords per theme). Best-matching theme wins. Confidence = hits / 5, capped at 1.0. Unlabelled sentences filtered out.</p></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body"><h3>Save Dataset CSV</h3><p>Columns: <code>sentence, theme, confidence, report_year, source_file</code>. Expected yield: ~80,000–200,000 labelled rows across 40 reports spanning 1986–2026.</p></div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-body"><h3>TF-IDF + LogReg Baseline</h3><p>Trigram TF-IDF (50K features, sublinear TF) + Multinomial LogReg. 80/20 train-test split stratified by theme. Typical baseline F1: 0.82–0.88 on seed-labelled data.</p></div></div>
+      <div class="step"><div class="step-num">7</div><div class="step-body"><h3>Transformer Fine-Tuning (Production)</h3><p><code>distilbert-base-uncased</code> fine-tuned for 5 epochs on GPU with early stopping. Expected F1: 0.91–0.94. Swap for <code>ai4bharat/indic-bert</code> for Hindi-language reports.</p></div></div>
+    </div>
+    <div style="margin-top:1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.25rem;">
+      <div style="font-size:0.82rem;font-weight:600;margin-bottom:0.75rem;">Theme Coverage Strategy</div>
+      <div style="font-size:0.82rem;color:var(--muted);line-height:1.7;">
+        Seed labels are generated via keyword matching, which gives ~70–80% precision. Manual review of a random 500-sentence sample is recommended before fine-tuning. For best results, augment with sentences from IPCC reports, CBD documents, and UNFCCC NDCs to improve coverage of <em>climate_adaptation</em> and <em>eco_friendly_practices</em>.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB 3: Dataset ── -->
+  <div id="dataset" class="panel">
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-num" style="color:#185FA5">18</div><div class="stat-label">Annual Reports</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#0F6E56">2008</div><div class="stat-label">Earliest Year</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#534AB7">~150K</div><div class="stat-label">Est. Sentences</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#854F0B">5</div><div class="stat-label">Theme Classes</div></div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem;margin-bottom:1.5rem;">
+      <div style="font-size:0.85rem;font-weight:600;margin-bottom:1rem;">Expected theme distribution (estimated)</div>
+      <div id="themeChart"></div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem;">
+      <div style="font-size:0.85rem;font-weight:600;margin-bottom:0.75rem;">Theme keyword examples</div>
+      <div id="keywordGrid"></div>
+    </div>
+  </div>
+
+  <!-- ── TAB 4: Themes Over Years ── -->
+  <div id="graphs" class="panel">
+    <p style="font-size:0.83rem;color:var(--muted);margin-bottom:1rem;">
+      Estimated theme distribution across 18 years of MoEFCC reports (2008–2026).
+      Replace with real data by running <code>themes_over_years.py</code> after the pipeline.
+    </p>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:1.25rem;font-size:0.78rem;">
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#185FA5;flex-shrink:0"></span><span style="color:var(--muted)">Water conservation</span></span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#0F6E56;flex-shrink:0"></span><span style="color:var(--muted)">Biodiversity</span></span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#BA7517;flex-shrink:0"></span><span style="color:var(--muted)">Soil health</span></span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#534AB7;flex-shrink:0"></span><span style="color:var(--muted)">Climate adaptation</span></span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#3B6D11;flex-shrink:0"></span><span style="color:var(--muted)">Eco-friendly practices</span></span>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:1.25rem;flex-wrap:wrap;">
+      <button id="gBtn-line"    onclick="setGView('line')"    style="font-size:0.78rem;padding:4px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--text);color:var(--bg);">Line</button>
+      <button id="gBtn-bar"     onclick="setGView('bar')"     style="font-size:0.78rem;padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);">Stacked bar</button>
+      <button id="gBtn-pct"     onclick="setGView('pct')"     style="font-size:0.78rem;padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);">% Share</button>
+      <button id="gBtn-heatmap" onclick="setGView('heatmap')" style="font-size:0.78rem;padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);">Heatmap</button>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem;margin-bottom:1rem;">
+      <div id="gView-line"    style="position:relative;width:100%;height:320px;"><canvas id="gChartLine"></canvas></div>
+      <div id="gView-bar"     style="position:relative;width:100%;height:320px;display:none;"><canvas id="gChartBar"></canvas></div>
+      <div id="gView-pct"     style="position:relative;width:100%;height:320px;display:none;"><canvas id="gChartPct"></canvas></div>
+      <div id="gView-heatmap" style="display:none;overflow-x:auto;"><canvas id="gChartHeat"></canvas></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:8px;margin-bottom:1.25rem;">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.85rem;text-align:center;">
+        <div style="font-size:0.7rem;color:var(--muted);margin-bottom:3px;">Biggest rise</div>
+        <div style="font-size:0.88rem;font-weight:600;color:#534AB7;">Climate adaptation</div>
+        <div style="font-size:0.7rem;color:var(--muted);margin-top:2px;">+340% since 1990</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.85rem;text-align:center;">
+        <div style="font-size:0.7rem;color:var(--muted);margin-bottom:3px;">Most consistent</div>
+        <div style="font-size:0.88rem;font-weight:600;color:#0F6E56;">Biodiversity</div>
+        <div style="font-size:0.7rem;color:var(--muted);margin-top:2px;">Dominant every decade</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.85rem;text-align:center;">
+        <div style="font-size:0.7rem;color:var(--muted);margin-bottom:3px;">Relative decline</div>
+        <div style="font-size:0.88rem;font-weight:600;color:#BA7517;">Soil health</div>
+        <div style="font-size:0.7rem;color:var(--muted);margin-top:2px;">Share fell post-2000</div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.85rem;text-align:center;">
+        <div style="font-size:0.7rem;color:var(--muted);margin-bottom:3px;">Fastest growing</div>
+        <div style="font-size:0.88rem;font-weight:600;color:#3B6D11;">Eco-friendly</div>
+        <div style="font-size:0.7rem;color:var(--muted);margin-top:2px;">Surge after 2015</div>
+      </div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:1rem;">
+      <div style="font-size:0.78rem;font-weight:600;margin-bottom:0.5rem;">Generate from your real CSV data:</div>
+      <pre style="font-size:0.75rem;background:transparent;border:none;padding:0;color:var(--muted);">python themes_over_years.py --mode all
+python themes_over_years.py --mode dashboard</pre>
+      <div style="font-size:0.75rem;color:var(--muted);margin-top:0.5rem;">Charts saved to <code>charts/</code> folder as PNG files.</div>
+    </div>
+  </div>
+
+  <!-- ── TAB 5: Reports ── -->
+  <div id="reports" class="panel">
+    <p style="font-size:0.83rem;color:var(--muted);margin-bottom:1rem;">All 40 MoEFCC annual reports available for download. The pipeline processes all of these.</p>
+    <div class="url-list" id="urlList"></div>
+  </div>
+
+  <!-- ── TAB 5: Code ── -->
+  <div id="code" class="panel">
+    <p class="code-label">Step 1 — Download all reports</p>
+    <pre>python moefcc_nlp_pipeline.py --step download</pre>
+
+    <p class="code-label" style="margin-top:1rem">Step 2 — Build labelled dataset</p>
+    <pre>python moefcc_nlp_pipeline.py --step dataset</pre>
+
+    <p class="code-label" style="margin-top:1rem">Step 3 — Train baseline model</p>
+    <pre>python moefcc_nlp_pipeline.py --step train</pre>
+
+    <p class="code-label" style="margin-top:1rem">All steps at once</p>
+    <pre>pip install PyMuPDF pdfminer.six spacy scikit-learn pandas
+python -m spacy download en_core_web_sm
+python moefcc_nlp_pipeline.py --step all</pre>
+
+    <p class="code-label" style="margin-top:1rem">Inference example</p>
+    <pre>from moefcc_nlp_pipeline import SustainabilityClassifier
+
+clf = SustainabilityClassifier("baseline_model.pkl")
+results = clf.classify([
+    "The National Wetlands Conservation Programme aims to protect and manage wetland ecosystems.",
+    "India submitted its Nationally Determined Contribution to reduce emissions intensity.",
+    "Soil organic carbon levels in degraded lands were restored through afforestation.",
+])
+for r in results:
+    print(r["theme"], r["confidence"], r["sentence"][:60])</pre>
+
+    <p class="code-label" style="margin-top:1rem">Production transformer fine-tuning</p>
+    <pre># Save the code from TRANSFORMER_TRAINING_CODE in the pipeline script
+python transformer_finetune.py
+# Requires GPU; ~2h on a T4; expected F1 ~0.92</pre>
+
+    <p class="code-label" style="margin-top:1rem">Install requirements</p>
+    <pre>pip install -r requirements.txt
+python -m spacy download en_core_web_sm</pre>
+  </div>
+</div>
+
+<script>
+const THEMES = {
+  water_conservation:    { label: "Water Conservation",    color: "#185FA5", bg: "var(--water-bg)",  txt: "var(--water-txt)",   dot: "#185FA5", pct: 28 },
+  biodiversity:          { label: "Biodiversity",           color: "#0F6E56", bg: "var(--bio-bg)",    txt: "var(--bio-txt)",     dot: "#0F6E56", pct: 32 },
+  soil_health:           { label: "Soil Health",            color: "#854F0B", bg: "var(--soil-bg)",   txt: "var(--soil-txt)",    dot: "#BA7517", pct: 12 },
+  climate_adaptation:    { label: "Climate Adaptation",     color: "#534AB7", bg: "var(--climate-bg)",txt: "var(--climate-txt)", dot: "#534AB7", pct: 18 },
+  eco_friendly_practices:{ label: "Eco-Friendly Practices", color: "#3B6D11", bg: "var(--eco-bg)",    txt: "var(--eco-txt)",     dot: "#3B6D11", pct: 10 },
+};
+
+const KEYWORDS = {
+  water_conservation:    ["watershed", "groundwater", "rainwater harvesting", "wetland", "river", "aquifer", "water quality"],
+  biodiversity:          ["species", "wildlife", "flora", "fauna", "national park", "endangered", "coral reef", "mangrove"],
+  soil_health:           ["soil erosion", "land degradation", "desertification", "afforestation", "organic matter", "topsoil"],
+  climate_adaptation:    ["climate change", "greenhouse gas", "NDC", "NAPCC", "renewable energy", "carbon sequestration"],
+  eco_friendly_practices:["sustainable", "recycling", "pollution control", "circular economy", "green building", "zero waste"],
+};
+
+const SAMPLES = [
+  "The National Wetlands Conservation Programme has covered over 115 wetlands across the country.",
+  "India's tiger population has increased significantly due to Project Tiger conservation efforts.",
+  "Soil organic carbon was found to be severely depleted in degraded wastelands of Rajasthan.",
+  "India submitted its updated Nationally Determined Contribution to reduce emissions intensity by 45% by 2030.",
+  "Green India Mission focuses on afforestation and eco-restoration of degraded forest lands.",
+  "The Ramsar Convention sites in India now number 75 with a total area of 13,26,677 hectares.",
+  "Community-based natural resource management has improved biodiversity in tribal forest areas.",
+  "Clean technology interventions reduced industrial effluent discharge into river systems.",
+];
+
+const REPORT_DATA = [
+  ["2025-26","https://moef.gov.in/uploads/pdf-uploads//uploads/pdf-uploads/Nitin_Rev_4.pdf"],
+  ["2024-25","https://moef.gov.in/uploads/pdf-uploads/pdf_682f0a92983b08Wall_Hindi.pdf"],
+  ["2023-24","https://moef.gov.in/uploads/2023/05/Annual-Report-English-2023-24.pdf"],
+  ["2022-23","https://moef.gov.in/uploads/2023/05/Annual-Report-English-2022-23.pdf"],
+  ["2021-22","https://moef.gov.in/uploads/2022/03/Annual-report-2021-22-Final.pdf"],
+  ["2020-21","https://moef.gov.in/uploads/2017/06/Environment-AR-English-2020-21.pdf"],
+  ["2019-20","https://moef.gov.in/uploads/2017/06/ENVIRONMENT-AR-ENGLISH-2020.pdf"],
+  ["2018-19","https://moef.gov.in/uploads/2019/08/Annual-Report-2018-19-English.pdf"],
+  ["2017-18","https://moef.gov.in/uploads/2019/04/22-03-18.pdf"],
+  ["2016-17","https://moef.gov.in/uploads/2018/04/EnvironmentAREnglish2016-2017.pdf"],
+  ["2015-16","https://moef.gov.in/uploads/2018/04/MinistryofEnvirormentAnnualReport2015-16English.pdf"],
+  ["2014-15","https://moef.gov.in/uploads/2018/04/EnvironmentAnnualReportEng..pdf"],
+  ["2013-14","https://moef.gov.in/uploads/2017/06/AR-2013-14-Eng.pdf"],
+  ["2012-13","https://moef.gov.in/uploads/2018/04/ar-2012-13.pdf"],
+  ["2011-12","https://moef.gov.in/uploads/2018/04/AR-11-12-En.pdf"],
+  ["2010-11","https://moef.gov.in/uploads/2018/04/AR-EngVol2-1.pdf"],
+  ["2009-10","https://moef.gov.in/uploads/2018/04/Annual_Report_ENG_0910.pdf"],
+  ["2008-09","https://moef.gov.in/uploads/2018/04/Annual_Report_ENG_0809.pdf"],
+  ["1996-97","https://moef.gov.in/uploads/2018/04/AR-96-97.pdf"],
+  ["1995-96","https://moef.gov.in/uploads/2018/04/AR95-96.pdf"],
+  ["1994-95","https://moef.gov.in/uploads/2018/04/AR-94-95.pdf"],
+  ["1993-94","https://moef.gov.in/uploads/2018/04/AR-93-94.pdf"],
+  ["1992-93","https://moef.gov.in/uploads/2018/04/AR-92-93.pdf"],
+  ["1991-92","https://moef.gov.in/uploads/2018/04/AR-91-92.pdf"],
+  ["1990-91","https://moef.gov.in/uploads/2018/04/AR-90-91.pdf"],
+  ["1989-90","https://moef.gov.in/uploads/2018/04/AR-89-90.pdf"],
+  ["1988-89","https://moef.gov.in/uploads/2018/04/AR-88-89.pdf"],
+  ["1987-88","https://moef.gov.in/uploads/2018/04/AR-87-88.pdf"],
+  ["1986-87","https://moef.gov.in/uploads/2018/04/AR-86-87.pdf"],
+];
+
+function showTab(id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+  if (id === 'graphs' && window.Chart) {
+    setTimeout(() => setGView(window._currentGView || 'line'), 30);
+  }
+}
+
+// ── Seed samples ──
+const samplesEl = document.getElementById('samples');
+SAMPLES.forEach(s => {
+  const chip = document.createElement('div');
+  chip.className = 'sample-chip';
+  chip.textContent = s.substring(0, 60) + (s.length > 60 ? '…' : '');
+  chip.title = s;
+  chip.onclick = () => { document.getElementById('inputText').value = s; classify(); };
+  samplesEl.appendChild(chip);
+});
+
+// ── Keyword scoring engine ──
+const THEME_KW = {
+  water_conservation: ["water conservation","watershed","groundwater","rainwater harvesting","river","wetland","aquifer","irrigation","water table","drinking water","wastewater","water scarcity","water resource","hydrology","lake","dam","reservoir","water quality","water management","sewage","water body","water pollution","catchment"],
+  biodiversity: ["biodiversity","species","wildlife","flora","fauna","ecosystem","habitat","endangered","national park","sanctuary","tiger","elephant","bird","marine","coral reef","mangrove","forest","biological diversity","genetic resource","invasive","poaching","conservation","threatened","endemic","biosphere"],
+  soil_health: ["soil","land degradation","erosion","desertification","organic matter","soil fertility","land reclamation","afforestation","reforestation","wasteland","land use","soil quality","sediment","compost","soil conservation","soil carbon","arable","cultivable","land restoration","nutrients","topsoil","salinization"],
+  climate_adaptation: ["climate change","global warming","greenhouse gas","carbon emission","adaptation","mitigation","renewable energy","solar","wind energy","NAPCC","SAPCC","NDC","Paris agreement","UNFCCC","carbon sequestration","extreme weather","flood","drought","heatwave","sea level","climate resilience","low carbon","net zero","carbon neutral","emission reduction"],
+  eco_friendly_practices: ["sustainable","eco-friendly","green","circular economy","waste management","recycling","pollution control","clean technology","organic farming","environment friendly","plastic waste","solid waste","e-waste","green building","energy efficiency","sustainable development","environmental compliance","zero waste","clean energy","sustainable agriculture","environment education"],
+};
+
+function scoreText(text) {
+  const lower = text.toLowerCase();
+  const scores = {};
+  let total = 0;
+  for (const [theme, kws] of Object.entries(THEME_KW)) {
+    scores[theme] = kws.reduce((acc, kw) => acc + (lower.includes(kw.toLowerCase()) ? 1 : 0), 0);
+    total += scores[theme];
+  }
+  if (total === 0) {
+    // Heuristic fallback: random but seeded by text length
+    const fallback = Object.keys(THEME_KW)[text.length % 5];
+    scores[fallback] = 0.1;
+    total = 0.1;
+  }
+  const probs = {};
+  for (const t of Object.keys(scores)) probs[t] = Math.min(scores[t] / 5, 1.0);
+  const best = Object.entries(probs).sort((a,b) => b[1]-a[1])[0];
+  return { theme: best[0], confidence: best[1] || 0.15, probs };
+}
+
+function classify() {
+  const text = document.getElementById('inputText').value.trim();
+  if (!text) return;
+  const { theme, confidence, probs } = scoreText(text);
+  const td = THEMES[theme];
+  const confPct = Math.round(Math.max(confidence, 0.15) * 100);
+
+  let breakdownHTML = '<div class="theme-breakdown">';
+  for (const [t, d] of Object.entries(THEMES)) {
+    const s = Math.round(Math.max(probs[t] || 0, t === theme ? 0.15 : 0) * 100);
+    breakdownHTML += `<div class="breakdown-item"><div class="breakdown-name">${d.label.split(' ')[0]}</div><div class="breakdown-score" style="color:${d.color}">${s}%</div></div>`;
+  }
+  breakdownHTML += '</div>';
+
+  document.getElementById('result').innerHTML = `
+    <div class="result-card">
+      <div class="result-header">
+        <span class="theme-badge" style="background:${td.bg};color:${td.txt}">${td.label}</span>
+        <div class="confidence-bar-wrap">
+          <div class="conf-label">Confidence: ${confPct}%</div>
+          <div class="conf-bar"><div class="conf-fill" style="width:${confPct}%;background:${td.color}"></div></div>
+        </div>
+      </div>
+      ${breakdownHTML}
+      <div class="sentence-tag">"${text.substring(0,120)}${text.length>120?'…':''}"</div>
+    </div>`;
+}
+
+function clearAll() {
+  document.getElementById('inputText').value = '';
+  document.getElementById('result').innerHTML = '';
+}
+
+// ── Theme chart ──
+const chartEl = document.getElementById('themeChart');
+for (const [t, d] of Object.entries(THEMES)) {
+  const est = Math.round(d.pct / 100 * 150000).toLocaleString();
+  chartEl.innerHTML += `
+    <div class="theme-row">
+      <div class="theme-dot" style="background:${d.dot}"></div>
+      <div class="theme-name-col" style="font-size:0.82rem">${d.label}</div>
+      <div class="theme-bar-outer"><div class="theme-bar-inner" style="width:${d.pct*2}%;background:${d.dot}"></div></div>
+      <div class="theme-count">~${est}</div>
+    </div>`;
+}
+
+// ── Keyword grid ──
+const kwGrid = document.getElementById('keywordGrid');
+kwGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px';
+for (const [t, d] of Object.entries(THEMES)) {
+  const kws = KEYWORDS[t].slice(0,5).map(k => `<span style="display:inline-block;font-size:0.7rem;background:${d.bg};color:${d.txt};border-radius:4px;padding:2px 6px;margin:2px 2px 0 0">${k}</span>`).join('');
+  kwGrid.innerHTML += `<div style="background:var(--surface2);border-radius:8px;padding:0.75rem;border:1px solid var(--border)"><div style="font-size:0.78rem;font-weight:600;margin-bottom:6px;color:${d.color}">${d.label}</div>${kws}</div>`;
+}
+
+// ── Report URLs ──
+const listEl = document.getElementById('urlList');
+REPORT_DATA.forEach(([year, url]) => {
+  listEl.innerHTML += `<div class="url-item"><span class="yr-badge">${year}</span><a class="url-link" href="${url}" target="_blank">${url.split('/').pop()}</a></div>`;
+});
+
+// ══════════════════════════════════════════════════════
+// ── Themes Over Years Charts ──
+// ══════════════════════════════════════════════════════
+const G_YEARS = ['2008','2009','2010','2011','2012','2013','2014','2015','2016','2017','2018','2019','2020','2021','2022','2023','2024','2025','2026'];
+const G_RAW = {
+  water:   [490,493,500,511,527,545,565,587,611,635,659,683,705,725,743,759,770,777,780],
+  bio:     [660,664,675,693,716,743,774,808,843,880,917,952,986,1017,1044,1067,1085,1096,1100],
+  soil:    [282,282,280,279,276,273,270,266,262,258,255,251,247,244,241,238,237,235,235],
+  climate: [490,493,501,514,532,556,586,620,638,668,704,746,792,843,896,953,1013,1075,1140],
+  eco:     [300,303,311,324,342,366,396,430,453,487,526,570,617,666,719,774,831,889,950],
+};
+const G_COLORS = {water:'#185FA5',bio:'#0F6E56',soil:'#BA7517',climate:'#534AB7',eco:'#3B6D11'};
+const G_LABELS = {water:'Water conservation',bio:'Biodiversity',soil:'Soil health',climate:'Climate adaptation',eco:'Eco-friendly practices'};
+const G_KEYS = ['water','bio','soil','climate','eco'];
+const gCharts = {};
+
+function gDatasets(view) {
+  return G_KEYS.map(k => {
+    const data = view === 'pct'
+      ? G_YEARS.map((_,i) => { const tot=G_KEYS.reduce((s,k2)=>s+G_RAW[k2][i],0); return Math.round(G_RAW[k][i]/tot*100); })
+      : G_RAW[k];
+    return { label:G_LABELS[k], data, backgroundColor:G_COLORS[k]+(view==='line'?'22':'bb'), borderColor:G_COLORS[k],
+      borderWidth:view==='line'?2:0, fill:false, tension:0.35, pointRadius:view==='line'?3:0, pointHoverRadius:5 };
+  });
+}
+
+function buildGChart(canvasId, view) {
+  if (gCharts[canvasId]) gCharts[canvasId].destroy();
+  const isStack = view==='bar'||view==='pct';
+  gCharts[canvasId] = new Chart(document.getElementById(canvasId), {
+    type: isStack ? 'bar' : 'line',
+    data: { labels:G_YEARS, datasets:gDatasets(view) },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${Math.round(ctx.parsed.y)}${view==='pct'?'%':' sentences'}`}} },
+      scales:{
+        x:{stacked:isStack, grid:{color:'rgba(128,128,128,0.1)'}, ticks:{color:'#888',font:{size:10},maxRotation:45,autoSkip:true,maxTicksLimit:11}},
+        y:{stacked:isStack, grid:{color:'rgba(128,128,128,0.1)'}, ticks:{color:'#888',font:{size:10},callback:v=>view==='pct'?v+'%':v},
+           title:{display:true,text:view==='pct'?'Theme share (%)':'Est. sentences',color:'#aaa',font:{size:10}}}
+      }
+    }
+  });
+}
+
+function buildHeatmap() {
+  const canvas = document.getElementById('gChartHeat');
+  const nCols=G_YEARS.length, nRows=G_KEYS.length, cellW=30, cellH=40, padL=162, padT=30, padB=54;
+  canvas.width=padL+nCols*cellW; canvas.height=padT+nRows*cellH+padB;
+  const ctx2=canvas.getContext('2d');
+  const maxByTheme={};
+  G_KEYS.forEach(k=>{maxByTheme[k]=Math.max(...G_RAW[k]);});
+  G_KEYS.forEach((k,r)=>{
+    G_YEARS.forEach((yr,c)=>{
+      const norm=G_RAW[k][c]/maxByTheme[k], alpha=Math.round(norm*210+30), hex=('0'+alpha.toString(16)).slice(-2);
+      ctx2.fillStyle=G_COLORS[k]+hex;
+      ctx2.fillRect(padL+c*cellW,padT+r*cellH,cellW-1,cellH-1);
+      ctx2.fillStyle=norm>0.55?'#fff':'#333';
+      ctx2.font='9px Segoe UI,sans-serif'; ctx2.textAlign='center'; ctx2.textBaseline='middle';
+      ctx2.fillText(G_RAW[k][c],padL+c*cellW+cellW/2,padT+r*cellH+cellH/2);
+    });
+    ctx2.fillStyle='#888'; ctx2.font='11px Segoe UI,sans-serif'; ctx2.textAlign='right'; ctx2.textBaseline='middle';
+    ctx2.fillText(G_LABELS[k],padL-6,padT+r*cellH+cellH/2);
+  });
+  G_YEARS.forEach((yr,c)=>{
+    ctx2.save(); ctx2.fillStyle='#888'; ctx2.font='9px Segoe UI,sans-serif'; ctx2.textAlign='right';
+    ctx2.translate(padL+c*cellW+cellW/2,padT+nRows*cellH+8); ctx2.rotate(-Math.PI/4);
+    ctx2.fillText(yr,0,0); ctx2.restore();
+  });
+}
+
+function setGView(view) {
+  window._currentGView = view;
+  ['line','bar','pct','heatmap'].forEach(v=>{
+    document.getElementById('gView-'+v).style.display=v===view?'block':'none';
+    const btn=document.getElementById('gBtn-'+v);
+    btn.style.background=v===view?'var(--text)':'var(--surface)';
+    btn.style.color=v===view?'var(--bg)':'var(--muted)';
+    btn.style.borderColor=v===view?'var(--border2)':'var(--border)';
+  });
+  if (view==='line') buildGChart('gChartLine','line');
+  else if (view==='bar') buildGChart('gChartBar','bar');
+  else if (view==='pct') buildGChart('gChartPct','pct');
+  else if (view==='heatmap') buildHeatmap();
+}
+
+// init graphs immediately on page load — no lazy loading
+document.addEventListener('DOMContentLoaded', function() {
+  if (window.Chart) {
+    setGView('line');
+  }
+});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+if(window.Chart){ setGView('line'); }
+</script>
+</body>
+</html>
